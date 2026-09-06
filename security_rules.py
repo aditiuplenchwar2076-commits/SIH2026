@@ -106,4 +106,24 @@ def run_security_rules(parsed_data):
             "remediation": "Configure login attempt limits, lockout or equivalent protection."
         })
 
+    # Rule 11: Insecure SSH protocol version (v1)
+    if parsed_data.get("ssh_v1_enabled"):
+        findings.append({
+            "rule_id": "NET-003",
+            "issue": "Insecure SSH protocol version 1 is enabled",
+            "severity": "High",
+            "description": "SSH version 1 has known cryptographic weaknesses and is vulnerable to traffic decryption and man-in-the-middle attacks.",
+            "remediation": "Configure SSH to enforce protocol version 2 ('set system services ssh protocol-version v2')."
+        })
+
+    # Rule 12: SSH direct root login permitted
+    if parsed_data.get("ssh_root_login_allowed"):
+        findings.append({
+            "rule_id": "AUTH-004",
+            "issue": "Direct root login over SSH is permitted",
+            "severity": "Medium",
+            "description": "Allowing root login over SSH increases the risk of brute-force attacks targeting the administrative account.",
+            "remediation": "Disallow direct root login over SSH ('set system services ssh root-login deny')."
+        })
+
     return findings

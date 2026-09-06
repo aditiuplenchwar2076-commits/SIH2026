@@ -2,11 +2,36 @@ def detect_vendor(configuration):
     configuration = configuration.lower()
 
     # Cisco
-    if "transport input" in configuration or "snmp-server" in configuration:
+    if (
+        "transport input" in configuration
+        or "snmp-server" in configuration
+        or "line vty" in configuration
+        or "enable secret" in configuration
+        or "enable password" in configuration
+    ):
         return "Cisco"
 
     # Juniper
-    elif "set system" in configuration or "juniper" in configuration:
+    elif any(
+        marker in configuration
+        for marker in [
+            "set system",
+            "set interfaces",
+            "set security",
+            "set protocols",
+            "set snmp",
+            "set routing-options",
+            "set firewall",
+            "set vlans",
+            "system {",
+            "interfaces {",
+            "protocols {",
+            "## last commit",
+            "## last changed",
+            "junos",
+            "juniper"
+        ]
+    ):
         return "Juniper"
 
     # Fortinet

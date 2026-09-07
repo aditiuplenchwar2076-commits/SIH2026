@@ -1,97 +1,50 @@
+"""
+AI Explanation Module for SIH2026
+
+PLANNED FUTURE ENHANCEMENT:
+Real-time Generative AI explanation of verified security findings (via OpenAI / LLM)
+is planned as a future enhancement for production deployments.
+
+For the current MVP, external AI API calls are disabled to ensure deterministic,
+fast, zero-cost, and offline-reliable audit execution. Verified rule-based
+remediations and structured recommendations are generated directly from the
+deterministic compliance engine without external API dependencies.
+"""
+
 import os
-from dotenv import load_dotenv
-from openai import OpenAI
-
-load_dotenv()
+from typing import List, Dict, Any
 
 
-def explain_findings(findings, vendor):
+def explain_findings(findings: List[Dict[str, Any]], vendor: str) -> Dict[str, Any]:
     """
-    Explains verified security findings using AI.
+    Returns recommendations and summary for verified security findings.
 
-    If AI is unavailable, the security audit still works.
+    For the current MVP, rule-based recommendations are extracted directly from
+    the deterministic security findings without making external OpenAI calls.
+    Preserves the 'ai_explanation' API contract for frontend integration.
     """
 
-    # If there are no findings, no AI explanation is needed
+    # If there are no findings, no security issues were detected
     if not findings:
         return {
             "status": "success",
-            "summary": "No security issues were detected in the configuration.",
+            "summary": f"No security issues were detected in the {vendor} configuration.",
             "recommendations": []
         }
 
-    # Get the API key from .env
-    api_key = os.getenv("OPENAI_API_KEY")
-
-    # If API key is missing, continue without AI
-    if not api_key:
-        return {
-            "status": "unavailable",
-            "summary": "AI explanation is not configured. Security findings and risk score are still available.",
-            "recommendations": [
-                finding.get("remediation")
-                for finding in findings
-            ]
-        }
-
-    client = OpenAI(api_key=api_key)
-
-    # Prepare the verified findings for the AI
-    findings_text = ""
-
+    # Extract verified rule-based remediations from the findings
+    recommendations = []
     for finding in findings:
-        findings_text += f"""
-Rule ID: {finding.get("rule_id")}
-Issue: {finding.get("issue")}
-Severity: {finding.get("severity")}
-Description: {finding.get("description")}
-Remediation: {finding.get("remediation")}
-"""
+        remediation = finding.get("remediation")
+        if remediation and remediation not in recommendations:
+            recommendations.append(remediation)
 
-    prompt = f"""
-You are a network security assistant helping analyze a {vendor} network device.
-
-The security engine has already verified the findings below.
-
-IMPORTANT:
-- Do NOT invent additional vulnerabilities.
-- Do NOT change the severity.
-- Do NOT remove any verified finding.
-- Only explain the findings provided.
-
-For each finding:
-1. Explain why it is a security risk in simple language.
-2. Explain the potential impact.
-3. Give a practical remediation recommendation.
-
-Then provide a short overall security summary.
-
-Verified findings:
-{findings_text}
-"""
-
-    try:
-        response = client.responses.create(
-            model="gpt-5.6-luna",
-            input=prompt
-        )
-
-        return {
-            "status": "success",
-            "summary": response.output_text,
-            "recommendations": [
-                finding.get("remediation")
-                for finding in findings
-            ]
-        }
-
-    except Exception:
-        # AI failure should NOT break the security audit
-        return {
-            "status": "unavailable",
-            "summary": "AI explanation is temporarily unavailable. The verified security findings and risk score are still available.",
-            "recommendations": [
-                finding.get("remediation")
-                for finding in findings
-            ]
-        }
+    # Return structured explanation preserving the existing API contract
+    return {
+        "status": "unavailable",
+        "summary": (
+            f"AI-powered dynamic explanation is a planned future enhancement. "
+            f"Displaying {len(recommendations)} verified rule-based remediation recommendations for {vendor}."
+        ),
+        "recommendations": recommendations
+    }

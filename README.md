@@ -88,8 +88,6 @@ Uploads a network device configuration file and performs:
 - Cisco
 - Juniper
 - Fortinet
-- Palo Alto
-- Huawei
 
 ## Important
 

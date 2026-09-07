@@ -1,3 +1,6 @@
+from cis_mapping import attach_cis_mappings
+
+
 def run_security_rules(parsed_data):
     """
     Runs security checks on the parsed configuration
@@ -126,4 +129,4 @@ def run_security_rules(parsed_data):
             "remediation": "Disallow direct root login over SSH ('set system services ssh root-login deny')."
         })
 
-    return findings
+    return attach_cis_mappings(findings)

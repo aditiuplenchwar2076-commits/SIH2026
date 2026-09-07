@@ -460,30 +460,185 @@ def parse_configuration(configuration, vendor):
     # FORTINET
     # =========================================================
     elif vendor == "Fortinet":
+        weak_passwords = {
+            "12345", "123456", "1234", "fortinet", "admin", "password",
+            "root", "test", "admin123", "pass", "cisco"
+        }
+        other_unnecessary = False
+        password_policy_enabled = False
+        password_policy_min_len = 0
+        current_block = []
 
-        for line in configuration_lines:
-            if line.lower().startswith("set hostname"):
-                parts = line.split()
-                if len(parts) > 2:
-                    data["hostname"] = parts[2]
+        for raw_line in configuration.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
 
-        if "telnet" in configuration_lower:
-            data["telnet_enabled"] = True
+            # Ignore FortiOS comments
+            if line.startswith("#") or line.startswith("//"):
+                continue
 
-        if "ssh" in configuration_lower:
-            data["ssh_enabled"] = True
+            line_l = line.lower()
+            tokens = line_l.split()
+            if not tokens:
+                continue
 
-        if "http" in configuration_lower:
-            data["http_enabled"] = True
+            # Track block context
+            if tokens[0] == "config":
+                current_block = tokens[1:]
+            elif tokens[0] == "end":
+                current_block = []
 
-        if "config log" in configuration_lower:
-            data["logging_configured"] = True
+            # -----------------------------------------------------
+            # Hostname
+            # -----------------------------------------------------
+            if tokens[:2] == ["set", "hostname"] and len(tokens) > 2:
+                data["hostname"] = raw_line.split()[2].strip('"\'')
 
-        if "config system ntp" in configuration_lower:
-            data["ntp_configured"] = True
+            # -----------------------------------------------------
+            # Administrative Access (Telnet / SSH / HTTP)
+            # -----------------------------------------------------
+            if tokens[:2] == ["set", "allowaccess"]:
+                access_services = tokens[2:]
+                if "telnet" in access_services:
+                    data["telnet_enabled"] = True
+                    other_unnecessary = True
+                if "ssh" in access_services:
+                    data["ssh_enabled"] = True
+                if "http" in access_services:
+                    data["http_enabled"] = True
+                    other_unnecessary = True
 
-        if "community public" in configuration_lower:
-            data["snmp_public"] = True
+            # Global telnet service toggle
+            if tokens[:2] == ["set", "telnet-service"]:
+                if len(tokens) > 2:
+                    if tokens[2] == "enable":
+                        data["telnet_enabled"] = True
+                        other_unnecessary = True
+                    elif tokens[2] == "disable":
+                        data["telnet_enabled"] = False
+
+            # SSH config block checks
+            if "ssh" in current_block:
+                data["ssh_enabled"] = True
+
+            if tokens[:2] == ["set", "ssh-v1"]:
+                if len(tokens) > 2:
+                    if tokens[2] == "enable":
+                        data["ssh_v1_enabled"] = True
+                    elif tokens[2] == "disable":
+                        data["ssh_v1_enabled"] = False
+
+            if tokens[:2] == ["set", "admin-login"] and "ssh" in current_block:
+                if len(tokens) > 2:
+                    if tokens[2] == "enable":
+                        data["ssh_root_login_allowed"] = True
+                    elif tokens[2] == "disable":
+                        data["ssh_root_login_allowed"] = False
+            elif tokens[:2] == ["set", "ssh-root-login"]:
+                if len(tokens) > 2:
+                    if tokens[2] in ["allow", "enable"]:
+                        data["ssh_root_login_allowed"] = True
+                    elif tokens[2] in ["deny", "disable"]:
+                        data["ssh_root_login_allowed"] = False
+
+            # -----------------------------------------------------
+            # Centralized Syslog / Logging
+            # -----------------------------------------------------
+            block_str = "".join(current_block)
+            if "syslogd" in block_str or "syslog" in block_str:
+                if tokens[:2] == ["set", "status"]:
+                    if len(tokens) > 2 and tokens[2] == "enable":
+                        data["logging_configured"] = True
+                    elif len(tokens) > 2 and tokens[2] == "disable":
+                        data["logging_configured"] = False
+                elif tokens[:2] == ["set", "server"]:
+                    data["logging_configured"] = True
+            elif "fortianalyzer" in block_str:
+                if tokens[:2] == ["set", "status"] and len(tokens) > 2 and tokens[2] == "enable":
+                    data["logging_configured"] = True
+
+            # -----------------------------------------------------
+            # NTP
+            # -----------------------------------------------------
+            if "ntp" in current_block or "ntpserver" in current_block:
+                if tokens[:2] == ["set", "status"]:
+                    if len(tokens) > 2 and tokens[2] == "enable":
+                        data["ntp_configured"] = True
+                    elif len(tokens) > 2 and tokens[2] == "disable":
+                        data["ntp_configured"] = False
+                elif tokens[:2] == ["set", "server"]:
+                    data["ntp_configured"] = True
+                elif tokens[0] == "config" and len(tokens) > 1 and tokens[1] == "ntpserver":
+                    data["ntp_configured"] = True
+
+            # -----------------------------------------------------
+            # SNMP Public Community
+            # -----------------------------------------------------
+            if "snmp" in current_block and "community" in current_block:
+                if tokens[:2] == ["edit", '"public"'] or tokens[:2] == ["edit", "public"]:
+                    data["snmp_public"] = True
+                elif tokens[:2] == ["set", "name"]:
+                    if len(tokens) > 2 and tokens[2].strip('"\'') == "public":
+                        data["snmp_public"] = True
+                elif tokens[:2] == ["set", "status"] and len(tokens) > 2 and tokens[2] == "disable":
+                    if data.get("snmp_public"):
+                        data["snmp_public"] = False
+
+            # -----------------------------------------------------
+            # AAA / Centralized Authentication (RADIUS / TACACS+)
+            # -----------------------------------------------------
+            if tokens[:3] == ["config", "user", "radius"] or tokens[:3] == ["config", "user", "tacacs+"]:
+                data["aaa_configured"] = True
+            elif tokens[:2] == ["config", "radius"] or tokens[:2] == ["config", "tacacs+"]:
+                data["aaa_configured"] = True
+
+            # -----------------------------------------------------
+            # Login Protection (Admin Lockout)
+            # -----------------------------------------------------
+            if tokens[:2] == ["set", "admin-lockout-threshold"]:
+                if len(tokens) > 2:
+                    try:
+                        val = int(tokens[2].strip('"\''))
+                        if val > 0:
+                            data["login_protection"] = True
+                        else:
+                            data["login_protection"] = False
+                    except ValueError:
+                        pass
+            elif tokens[:2] == ["set", "admin-lockout-duration"]:
+                data["login_protection"] = True
+
+            # -----------------------------------------------------
+            # Password Policy & Plaintext Admin Password
+            # -----------------------------------------------------
+            if "password-policy" in current_block:
+                if tokens[:2] == ["set", "status"]:
+                    if len(tokens) > 2 and tokens[2] == "enable":
+                        password_policy_enabled = True
+                    elif len(tokens) > 2 and tokens[2] == "disable":
+                        password_policy_enabled = False
+                        data["weak_password_policy"] = True
+                elif tokens[:2] == ["set", "minimum-length"]:
+                    if len(tokens) > 2:
+                        try:
+                            password_policy_min_len = int(tokens[2].strip('"\''))
+                        except ValueError:
+                            pass
+
+            if tokens[:2] == ["set", "password"]:
+                rest_val = line_l.split("set password", 1)[1].strip().strip('"\'')
+                if rest_val.startswith("enc"):
+                    pass
+                elif len(tokens) > 2:
+                    pw = tokens[2].strip('"\'')
+                    if pw in weak_passwords or len(pw) < 8:
+                        data["weak_password_policy"] = True
+
+        if password_policy_enabled and password_policy_min_len < 8:
+            data["weak_password_policy"] = True
+
+        data["unnecessary_services"] = other_unnecessary or data["http_enabled"]
 
     # =========================================================
     # PALO ALTO

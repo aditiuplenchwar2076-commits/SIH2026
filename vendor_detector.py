@@ -35,7 +35,20 @@ def detect_vendor(configuration):
         return "Juniper"
 
     # Fortinet
-    elif "config system" in configuration or "fortigate" in configuration:
+    elif any(
+        marker in configuration
+        for marker in [
+            "config system",
+            "config router",
+            "config firewall",
+            "config log",
+            "config user",
+            "set allowaccess",
+            "fortigate",
+            "fortios",
+            "#config-version="
+        ]
+    ):
         return "Fortinet"
 
     # Palo Alto
